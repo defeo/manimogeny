@@ -68,9 +68,13 @@ class CayleyGraph(Mobject):
         text.next_to(dir, dir / np.linalg.norm(dir), buff=0.4)
         return text
 
-    def edge(self, n, jump, bend, **kwargs):
-        return ArcBetweenPoints(self.vertex_pos(n), self.vertex_pos(n + jump),
-                                angle=bend, **kwargs)
+    def edge(self, n, jump, bend, tip=False, **kwargs):
+        if tip:
+            return CurvedArrow(self.vertex_pos(n), self.vertex_pos(n + jump),
+                               angle=bend, **kwargs)
+        else:            
+            return ArcBetweenPoints(self.vertex_pos(n), self.vertex_pos(n + jump),
+                                    angle=bend, **kwargs)
 
     def path(self, path, start=0, **kwargs):
         edges = []
@@ -89,6 +93,31 @@ Text.CONFIG = {
 MathTex.CONFIG = {
     'color': BLACK,
 }
+
+class CSIDH(Scene):
+    def construct(self):
+        graph = CayleyGraph(N=18, gen=2, radius=3,
+                            edge_dirs=(1,-5,-2), edge_bends=[1,1.5,1],
+                            size=0.8, label_func=None).shift(2*LEFT)
+
+        # Show vertices
+        for i, d in enumerate(graph.dlog_order()):
+            self.play(FadeIn(graph.vertices[d]),
+                      run_time=0.1 + 0.9**i)
+
+        # Show edges
+        legend = Group()
+        for i, es in enumerate(graph.edges):
+            mul = Line([3.5,-1-0.7*i,0], [4.5,-1-0.7*i,0], color=graph.edge_colors[i])
+            mul.add(Text('degree %d' % [2,3,5][i]).next_to(mul, RIGHT))
+            legend.add(mul)
+            self.play(ShowCreation(mul))
+            for j, d in enumerate(graph.cycle_order(i)):
+                self.play(ShowCreation(es[d]), run_time=0.1 + 0.5**j)
+            self.wait(1)
+
+        self.wait()
+
 
 class Cayley(Scene):
     def construct(self):
@@ -152,7 +181,9 @@ class Cayley(Scene):
         self.wait()
         
         # Eliminate Z/q
-        self.play(FadeOut(Zq), FadeOut(legend))
+        self.play(FadeOut(dlogeq), FadeOut(legend))
+
+        self.wait()
 
 class KeyExchange(Scene):
     def construct(self):
@@ -172,13 +203,16 @@ class KeyExchange(Scene):
         self.wait()
         
         # Alice path
-        apath, ai = graph.path([2,-1,2], stroke_width=5)
+        apath, ai = graph.path([2,-1,2], tip=True, stroke_width=5)
         apath = Group(*apath).shift(2*LEFT)
-        bpath, bi = graph.path([-3,0,2], stroke_width=5)
+        bpath, bi = graph.path([-3,0,2], tip=True, stroke_width=5)
         bpath = Group(*bpath).shift(2*LEFT)
         apk = graph.labels[ai]
+        apv = graph.vertices[ai]
         bpk = graph.labels[bi]
+        bpv = graph.vertices[bi]
         shk = graph.labels[(ai + bi) % graph.N]
+        shv = graph.vertices[(ai + bi) % graph.N]
         alice = Text('Alice', color=DARK_BLUE).next_to(apk, RIGHT)
         bob = Text('Bob', color=DARK_BLUE).next_to(bpk, LEFT)
 
@@ -186,10 +220,10 @@ class KeyExchange(Scene):
         #bkey = Text('Bob: ', '2', '-1', '2')
         
         self.play(ShowCreation(apath), run_time=2, rate_func=linear)
-        self.play(FadeIn(apk), FadeIn(alice))
+        self.play(FadeIn(apk), FadeIn(alice), ScaleInPlace(apv, 2))
         self.wait(1)
         self.play(ShowCreation(bpath), run_time=2, rate_func=linear)
-        self.play(FadeIn(bpk), FadeIn(bob))
+        self.play(FadeIn(bpk), FadeIn(bob), ScaleInPlace(bpv, 2))
 
         self.wait()
 
@@ -204,21 +238,12 @@ class KeyExchange(Scene):
 
         self.play(*(Rotating(e, radians=2*PI/graph.N*bi,
                              about_point=graph.get_center()) for e in apath))
-        self.play(FadeIn(shk))
+        self.play(FadeIn(shk), ScaleInPlace(shv, 2))
         self.play(apath.fade, 0.7)
         
         self.play(*(Rotating(e, radians=2*PI/graph.N*ai,
                              about_point=graph.get_center()) for e in bpath))
         self.play(bpath.fade, 0.7)
-
-        self.wait()
+        self.play(FadeToColor(shv, RED))
         
-class Test(Scene):
-    def construct(self):
-        d = Line([1,0,0], [-1,0,0], color=BLACK)
-        self.add(d)
-        self.wait()
-        d.set_stroke(opacity=0.1)
-        self.wait()
-        self.play(ApplyMethod(d.fade, -9))
         self.wait()

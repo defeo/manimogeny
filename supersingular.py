@@ -1,21 +1,40 @@
 import networkx as nx
 from manim import *
-from itertools import cycle
+from itertools import cycle, zip_longest
 
-class Graph():
+class LabeledDot(Dot):
+    def __init__(self, label, radius=None, **kwargs) -> None:
+        if isinstance(label, str):
+            rendered_label = MathTex(label, color=BLACK)
+        else:
+            rendered_label = label
+
+        if radius is None:
+            radius = (
+                0.1 + max(rendered_label.get_width(), rendered_label.get_height()) / 2
+            )
+        Dot.__init__(self, radius=radius, **kwargs)
+        rendered_label.move_to(self.get_center())
+        self.add(rendered_label)
+
+
+class Graph(Mobject):
     def __init__(self, graphs, vertex_color=RED, edge_colors=[BLACK], scale=5, **kwargs):
+        super().__init__(**kwargs)
         self.edges = []
         self.graphs = [nx.MultiGraph(g) for g in graphs]
         self.layout = nx.kamada_kawai_layout(self.graphs[0], dim=3)
-        self.scale = scale
+        self._scale = scale
 
         self.vertices = [self.vertex(n, fill_color=vertex_color, **kwargs)
                          for n in self.graphs[0].nodes]
+        self.add(*self.vertices)
 
         for g, col in zip(self.graphs, cycle(edge_colors)):
             self.edges.append([])
             for n, e, _ in g.edges:
-                self.edges.append(self.edge(n, e, color=col, **kwargs))
+                self.edges[-1].append(self.edge(n, e, color=col, **kwargs))
+            self.add(*self.edges[-1])
 
     def vertex(self, n, **kwargs):
         defaults = dict(
@@ -24,25 +43,29 @@ class Graph():
             color=RED,
         )
         defaults.update(kwargs)
-        return SimpleSphere(**defaults).move_to(self.scale*self.layout[n])
+        return SimpleSphere(**defaults).move_to(self._scale*self.layout[n])
 
     def edge(self, start, end, **kwargs):
         if (start == end):
             return CubicBezier([
-                self.scale*self.layout[end],
-                self.scale*self.layout[end] + [1,1,1],
-                self.scale*self.layout[end] + [-1,1,-1],
-                self.scale*self.layout[end]], **kwargs)
+                self._scale*self.layout[end],
+                self._scale*self.layout[end] + [1,1,1],
+                self._scale*self.layout[end] + [-1,1,-1],
+                self._scale*self.layout[end]], **kwargs)
         else:
-            return Line(self.scale*self.layout[start],
-                        self.scale*self.layout[end],
+            return Line(self._scale*self.layout[start],
+                        self._scale*self.layout[end],
                         **kwargs)
     
     def path(self, start, end, graph=0, **kwargs):
         path = nx.shortest_path(self.graphs[graph], start, end)
         return [self.edge(prev, next, **kwargs)
                 for prev, next in zip(path[:-1], path[1:])]
-        
+
+    def cycle(self, start, mid1, mid2, **kwargs):
+        return (self.path(start, mid1, **kwargs)
+                + self.path(mid1, mid2, **kwargs)
+                + self.path(mid2, start, **kwargs))
 
 class SimpleSphere(Dot):
     def __init__(self, resolution=20, **kwargs):
@@ -78,16 +101,53 @@ class SSGraph(Rotating3DScene):
         self.wait(10)
         self.stop_ambient_camera_rotation()
 
+class GraphConstruct(Rotating3DScene):
+    def construct(self):
+        graph = Graph([ssg2, ssg3], edge_colors=[DARK_BLUE, ORANGE])
+
+        self.begin_ambient_camera_rotation(0.111, 0.057, 0.049)
+        self.play(
+            *(FadeIn(v, run_time=2) for v in graph.vertices[0::4]),
+            *(FadeIn(v, run_time=3) for v in graph.vertices[1::4]),
+            *(FadeIn(v, run_time=4) for v in graph.vertices[2::4]),
+            *(FadeIn(v, run_time=5) for v in graph.vertices[3::4]))
+
+        self.wait()
+
+        self.play(*(ShowCreation(e) for e in graph.edges[0]), run_time=3)
+
+        self.wait(3)
+        
+        self.play(*(FadeOut(e, run_time=1) for e in graph.edges[0]),
+                  *(ShowCreation(e, run_time=3) for e in graph.edges[1]))
+
+        self.wait(3)
+
+        self.play(*(FadeOut(e) for e in graph.edges[1]),
+                  *(FadeIn(e)  for e in graph.edges[0]))
+
+        self.wait(1)
+        
+        self.play(*(FadeOut(e) for e in graph.edges[0]),
+                  *(FadeIn(e)  for e in graph.edges[1]))
+
+        self.wait(1)
+        
+        self.play(*(FadeIn(e)  for e in graph.edges[0]))
+
+        self.wait()
+
+        self.stop_ambient_camera_rotation()
+
+
 class PathFinding(Rotating3DScene):
     def construct(self):
         graph = Graph([ssg2], edge_colors=[LIGHT_GRAY], opacity=0.5)
-        for e in graph.edges:
-            self.add(*e)
-        self.add(*graph.vertices)
-        #self.set_camera_orientation(phi=75 * DEGREES, theta=30 * DEGREES)
-        self.begin_ambient_camera_rotation(0.111, 0.057, 0.049)
 
-        self.wait(20)
+        self.begin_ambient_camera_rotation(0.111, 0.057, 0.049)
+        self.play(FadeIn(graph))
+        
+        self.wait(19)
 
         # Isogeny walk problem
         start = graph.vertex(1, fill_color=DARK_BLUE, radius=0.3, resolution=10)
@@ -151,6 +211,139 @@ class PathFinding(Rotating3DScene):
             self.play(ShowCreation(e))
 
         self.wait(20)
+        
+        self.stop_ambient_camera_rotation()
+
+
+class Cycles(Rotating3DScene):
+    def construct(self):
+        graph = Graph([ssg2], edge_colors=[LIGHT_GRAY], opacity=0.5)
+
+        self.begin_ambient_camera_rotation(0.111, 0.057, 0.049)
+        
+        self.play(FadeIn(graph))
+
+        self.wait()
+
+        cycles = [
+            Group(*graph.cycle(1, 34, 82, color=BLUE, stroke_width=8)),
+            Group(*graph.cycle(51, 70, 33, color=RED, stroke_width=8)),
+            Group(graph.edge(20, 20, color=BLACK, stroke_width=8)),
+            Group(*graph.cycle(68, 73, 70, color=LIGHT_BROWN, stroke_width=8)),
+            Group(*graph.cycle(38, 31, 83, color=GREEN, stroke_width=8)),
+            Group(*graph.cycle(45, 71, 85, color=PURPLE, stroke_width=8)),
+            Group(*graph.cycle(23, 15, 67, color=DARK_BLUE, stroke_width=8)),
+            Group(*graph.cycle(19, 6, 31, color=TEAL, stroke_width=8)),
+        ]
+
+        for c in cycles:
+            f = c.copy()
+            f.set_color(WHITE)
+            self.play(FadeIn(c), ShowPassingFlash(f))
+
+        self.wait(5)
+        
+        self.play(*(FadeOut(c) for c in cycles))
+
+        self.wait(5)
+        
+        self.stop_ambient_camera_rotation()
+
+class SIDH(Rotating3DScene):
+    def construct(self):
+        graph = Graph([ssg2], edge_colors=[LIGHT_GRAY], opacity=0.5)
+
+        self.begin_ambient_camera_rotation(0.111, 0.057, 0.049)
+        
+        self.play(FadeIn(graph))
+
+        self.wait()
+        
+        start = graph.vertex(1, fill_color=BLUE, radius=0.2, resolution=10)
+        self.play(Transform(graph.vertices[1], start))
+        alice = graph.path(1, 15, color=DARK_BLUE, stroke_width=8)
+        bob = graph.path(1, 50, color=GREEN, stroke_width=8)
+        enda = graph.vertex(15, fill_color=BLUE, radius=0.2, resolution=10)
+        endb = graph.vertex(50, fill_color=BLUE, radius=0.2, resolution=10)
+        for es in zip_longest(alice, bob):
+            self.play(*(ShowCreation(e) for e in es if e is not None))
+        self.play(Transform(graph.vertices[15], enda),
+                  Transform(graph.vertices[50], endb))
+        self.wait()
+
+        atxt = LabeledDot(Text('??', color=DARK_BLUE)).scale(1.5).next_to(enda, UP)
+        btxt = LabeledDot(Text('??', color=RED)).scale(1.5).next_to(endb, UP)
+        atxt.fade(0.9)
+        btxt.fade(0.9)
+        self.add_fixed_orientation_mobjects(atxt, btxt)
+        self.play(ApplyMethod(atxt.fade, -9), ApplyMethod(btxt.fade, -9))
+        self.wait(20)
+        
+        self.stop_ambient_camera_rotation()
+
+
+class Hashing(Rotating3DScene):
+    def construct(self):
+        graph = Graph([ssg2], edge_colors=[LIGHT_GRAY], opacity=0.5)
+
+        self.set_camera_orientation(phi=75 * DEGREES, theta=-45 * DEGREES)
+        
+        self.begin_ambient_camera_rotation(0.111, 0.057, 0.049)
+        
+        self.play(FadeIn(graph))
+
+        self.wait()
+
+        j1728 = graph.vertex(20, fill_color=BLUE, radius=0.2, resolution=10)
+        l1728 = graph.edge(20, 20, color=BLUE, stroke_width=8)
+        j0 = graph.vertex(26, fill_color=ORANGE, radius=0.2, resolution=10)
+        l0 = graph.edge(26, 26, color=ORANGE, stroke_width=8)
+        j38 = graph.vertex(38, fill_color=GREEN, radius=0.2, resolution=10)
+        j31 = graph.vertex(31, fill_color=GREEN, radius=0.2, resolution=10)
+        j83 = graph.vertex(83, fill_color=GREEN, radius=0.2, resolution=10)
+        loop3 = graph.cycle(38, 31, 83, color=GREEN, stroke_width=8)
+        self.play(TransformFromCopy(graph.vertices[20], j1728))
+        self.play(ShowCreation(l1728))
+        self.play(TransformFromCopy(graph.vertices[26], j0))
+        self.play(ShowCreation(l0))
+        self.play(TransformFromCopy(graph.vertices[38], j38),
+                  TransformFromCopy(graph.vertices[31], j31),
+                  TransformFromCopy(graph.vertices[83], j83))
+        for e in loop3:
+            self.play(ShowCreation(e))
+        self.wait(15)
+
+        self.play(FadeOut(l1728),
+                  Transform(j0, graph.vertices[26]), FadeOut(l0),
+                  Transform(j38, graph.vertices[38]),
+                  Transform(j31, graph.vertices[31]),
+                  Transform(j83, graph.vertices[83]),
+                  *(FadeOut(e) for e in loop3))
+        self.wait()
+
+        walk = graph.path(20, 15, color=DARK_BLUE, stroke_width=8)
+        end = graph.vertex(15, fill_color=RED, radius=0.2, resolution=10)
+        for e in walk:
+            self.play(ShowCreation(e))
+        self.play(TransformFromCopy(graph.vertices[15], end))
+        self.wait(2)
+        
+        cycle = Group(*graph.cycle(15, 83, 21, color=ORANGE, stroke_width=8))
+        f = cycle.copy()
+        f.set_color(WHITE)
+        self.play(FadeIn(cycle), ShowPassingFlash(f))
+        self.play(FadeOut(cycle))
+        self.wait(10)
+
+        self.play(*(FadeOut(e) for e in walk))
+        self.wait(5)
+        self.play(*(FadeIn(e) for e in walk))
+        self.wait(5)
+        self.play(*(FadeOut(e) for e in walk))
+        self.wait(25)
+        
+        self.play(Transform(j1728, graph.vertices[20]))
+        self.wait(40)
         
         self.stop_ambient_camera_rotation()
 
