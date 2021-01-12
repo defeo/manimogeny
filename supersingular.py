@@ -1,6 +1,8 @@
 import networkx as nx
 from manim import *
 from itertools import cycle, zip_longest
+import random
+random.seed()
 
 class LabeledDot(Dot):
     def __init__(self, label, radius=None, **kwargs) -> None:
@@ -100,6 +102,19 @@ class SSGraph(Rotating3DScene):
         self.begin_ambient_camera_rotation(0.111, 0.057, 0.049)
         self.wait(10)
         self.stop_ambient_camera_rotation()
+
+class SSGraph2(Rotating3DScene):
+    def construct(self):
+        graph = Graph([ssg2], scale=3).shift(0.5*DOWN)
+        for e in graph.edges:
+            self.add(*e)
+        self.add(*graph.vertices)
+        sidh = Text('SIDH', color=BLACK).scale(1.5).move_to(3*UP)
+        self.begin_ambient_camera_rotation(0.211, 0.157, 0.049)
+        self.add_fixed_in_frame_mobjects(sidh)
+        self.wait(30)
+        self.stop_ambient_camera_rotation()
+
 
 class GraphConstruct(Rotating3DScene):
     def construct(self):
@@ -346,6 +361,32 @@ class Hashing(Rotating3DScene):
         self.wait(40)
         
         self.stop_ambient_camera_rotation()
+
+class RandomWalk(Rotating3DScene):
+    def construct(self):
+        graph = Graph([ssg2], edge_colors=[LIGHT_GRAY], opacity=0.5, scale=3, radius=0.06)
+
+        self.begin_ambient_camera_rotation(0.111, 0.057, 0.049)
+        self.play(FadeIn(graph))
+        
+        self.wait(1)
+
+        # Start a random walk
+        prev, cur = None, 1
+        start = graph.vertex(cur, fill_color=DARK_BLUE, radius=0.18, resolution=8)
+        self.play(Transform(graph.vertices[cur], start))
+
+        for i in range(80):
+            neighbors = list(graph.graphs[0].neighbors(cur))
+            try:
+                neighbors.remove(prev)
+            except:
+                pass
+            next = random.choice(neighbors) if neighbors else prev
+            e = graph.edge(cur, next, color=BLACK, stroke_width=6)
+            self.play(ShowCreation(e))
+            prev, cur = cur, next
+
 
 
 ssg2 = {0: [14],
